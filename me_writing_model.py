@@ -2,6 +2,7 @@
 import tensorflow as tf
 import numpy as np
 import keras
+import os
 
 #%%
 #Loading and reading text file
@@ -17,7 +18,7 @@ def text_to_id(txt):
     return np.array([char_to_id[i] for i in txt])
 
 writing_as_id = text_to_id(writing)
-print(writing_as_id)
+print(writing_as_id.shape)
 
 def int_to_text(ints):
   try:
@@ -55,14 +56,14 @@ data = dataset.shuffle(buffer_size).batch(batch_size, drop_remainder=True)
 #%%
 #Building the Model
 def build_model(vocab_size, embedding_dim, rnn_units, batch_size):
-  model = tf.keras.Sequential([
-    tf.keras.layers.Embedding(vocab_size, embedding_dim,
+  model = keras.Sequential([
+    keras.layers.Embedding(vocab_size, embedding_dim,
                               batch_input_shape=[batch_size, None]),
-    tf.keras.layers.LSTM(rnn_units,
+    keras.layers.LSTM(rnn_units,
                         return_sequences=True,
                         stateful=True,
                         recurrent_initializer='glorot_uniform'),
-    tf.keras.layers.Dense(vocab_size)
+    keras.layers.Dense(vocab_size)
   ])
   return model
 
@@ -72,7 +73,18 @@ model.summary()
 # %%
 #Creating a loss function
 def loss(labels, logits):
-  return tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
+  return keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
+
+#%%
+#Creating checkpoints
+#Directory where the checkpoints will be saved
+checkpoint_dir = './training_checkpoints'
+# Name of the checkpoint files
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
+
+checkpoint_callback=tf.keras.callbacks.ModelCheckpoint(
+    filepath=checkpoint_prefix,
+    save_weights_only=True)
 
 #%%
 #Compiling the model
@@ -80,7 +92,14 @@ model.compile(optimizer='adam', loss=loss)
 
 #%%
 #Training the model
-history = model.fit(data, epochs=1)
+history = model.fit(data, epochs=1, callbacks=[checkpoint_callback])
+
+#%%
+#Rebuilding the model
+model = build_model(vocab_size, embedding_dim, rnn_units, batch_size=1)
+
+model.load_weights(tf.train.latest_checkpoint(checkpoint_dir))
+model.build(tf.TensorShape([1, None]))
 
 #%%
 #Generating Text
@@ -88,12 +107,12 @@ def generate_text(model, start_string):
   # Evaluation step (generating text using the learned model)
 
   # Number of characters to generate
-  num_generate = 800
+  num_generate = 1000
 
   # Converting our start string to numbers (vectorizing)
   input_eval = [char_to_id[s] for s in start_string]
-  input_eval = tf.expand_dims(input_eval, 0)
-
+  input_eval = np.expand_dims(input_eval, 0)
+  
   # Empty string to store our results
   text_generated = []
 
@@ -105,12 +124,10 @@ def generate_text(model, start_string):
   # Here batch size == 1
   model.reset_states()
   for i in range(num_generate):
-      predictions = model(input_eval)
-      print(predictions)
+      predictions = model(inputs=input_eval)
       # remove the batch dimension
 
-      predictions = tf.squeeze(predictions)
-      print(predictions)
+      predictions = tf.squeeze(predictions, 0)
 
       # using a categorical distribution to predict the character returned by the model
       predictions = predictions / temperature
@@ -124,7 +141,7 @@ def generate_text(model, start_string):
 
   return (start_string + ''.join(text_generated))
 
-inp = "Ellie is cool and sick and awesome"
+inp = input("Type something: ")
 print(generate_text(model, inp))
 
 # %%
